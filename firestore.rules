@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== Helpers =====
+    function isSignedIn() { return request.auth != null; }
+    function userDoc(uid) { return get(/databases/$(database)/documents/users/$(uid)).data; }
+    function myRole() { return userDoc(request.auth.uid).role; }
+    function myStatus() { return userDoc(request.auth.uid).status; }
+    function myUpazila() { return userDoc(request.auth.uid).upazila; }
+    function isActive() { return isSignedIn() && myStatus() == 'active'; }
+    function isAdmin() { return isActive() && (myRole() == 'upazila_admin' || myRole() == 'district_admin'); }
+    function isDistrictAdmin() { return isActive() && myRole() == 'district_admin'; }
+    function isCommittee() {
+      return isActive() && myRole() in ['upazila_committee', 'district_committee', 'upazila_admin', 'district_admin'];
+    }
+
+    // ===== users =====
+    match /users/{uid} {
+      // Anyone signed-in may read the public (non-hidden) projection.
+      // Hidden fields (securityKey, committeeCode, approvedBy) are never
+      // returned to the client — map them out in a limited read, or rely on
+      // the service layer to strip them before surfacing.
+      allow read: if isActive() || isSignedIn() && uid == request.auth.uid;
+
+      // Self-registration creates own doc; users may update only their own
+      // non-role, non-status fields.
+      allow create: if isSignedIn() && uid == request.auth.uid
+        && request.resource.data.role in ['student', 'teacher', 'alumni']
+        && request.resource.data.status == 'pending';
+
+      allow update: if isActive() && uid == request.auth.uid
+        // Cannot change role, status, securityKey, committeeCode, approvedBy
+        && !request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasAny(['role', 'status', 'securityKey', 'committeeCode', 'approvedBy']);
+
+      // Admins can update status (approve, suspend, soft-delete) and create
+      // committee accounts.
+      allow update: if isAdmin();
+
+      // Only district admin can create committee/admin accounts.
+      allow create: if isDistrictAdmin()
+        && request.resource.data.role in ['upazila_committee', 'district_committee', 'upazila_admin', 'district_admin'];
+
+      // Soft delete only (admins). Hard delete disabled to preserve audit trail.
+      allow delete: if false;
+    }
+
+    // ===== Content: notices, events, gallery =====
+    // District committee/admin manage district-scoped content.
+    // Upazila committee/admin manage only their upazila-scoped content.
+    function canWriteDistrict() {
+      return isActive() && myRole() in ['district_committee', 'district_admin'];
+    }
+    function canWriteUpazila(upazila) {
+      return isActive()
+        && myRole() in ['upazila_committee', 'upazila_admin']
+        && myUpazila() == upazila;
+    }
+
+    match /notices/{id} {
+      allow read: if true;
+      allow create: if canWriteDistrict() && request.resource.data.scope == 'district'
+                    || canWriteUpazila(request.resource.data.upazila) && request.resource.data.scope == 'upazila';
+      allow update, delete: if canWriteDistrict() && resource.data.scope == 'district'
+                            || canWriteUpazila(resource.data.upazila) && resource.data.scope == 'upazila';
+    }
+
+    match /events/{id} {
+      allow read: if true;
+      allow create: if canWriteDistrict() && request.resource.data.scope == 'district'
+                    || canWriteUpazila(request.resource.data.upazila) && request.resource.data.scope == 'upazila';
+      allow update, delete: if canWriteDistrict() && resource.data.scope == 'district'
+                            || canWriteUpazila(resource.data.upazila) && resource.data.scope == 'upazila';
+    }
+
+    match /gallery/{id} {
+      allow read: if true;
+      allow create: if canWriteDistrict() && request.resource.data.scope == 'district'
+                    || canWriteUpazila(request.resource.data.upazila) && request.resource.data.scope == 'upazila';
+      allow update, delete: if canWriteDistrict() && resource.data.scope == 'district'
+                            || canWriteUpazila(resource.data.upazila) && resource.data.scope == 'upazila';
+    }
+
+    // ===== Contact messages =====
+    // Anyone (even anon) may submit; only admins may read.
+    match /contact_messages/{id} {
+      allow create: if true;
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // ===== Audit logs =====
+    // Anyone signed-in may append; only admins may read.
+    match /audit_logs/{id} {
+      allow create: if isSignedIn();
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+  }
+}
