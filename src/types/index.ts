@@ -22,6 +22,72 @@ export type UpazilaName =
   | 'হরিণাকুণ্ডু'
   | null;
 
+// ===== Committee Positions & Structure =====
+
+export type CommitteePositionTitle =
+  | 'President'
+  | 'Senior Vice President'
+  | 'Vice President'
+  | 'General Secretary'
+  | 'Joint Secretary'
+  | 'Organizing Secretary'
+  | 'Office Secretary'
+  | 'Finance Secretary'
+  | 'Sports Secretary'
+  | 'Cultural Secretary'
+  | 'Publicity Secretary'
+  | 'Executive Member';
+
+export interface CommitteePositionConfig {
+  key: CommitteePositionTitle;
+  bnLabel: string;
+  order: number;
+  category: 'leadership' | 'secretariat' | 'executive';
+}
+
+export const COMMITTEE_POSITIONS: CommitteePositionConfig[] = [
+  { key: 'President', bnLabel: 'সভাপতি', order: 1, category: 'leadership' },
+  { key: 'Senior Vice President', bnLabel: 'সিনিয়র সহ-সভাপতি', order: 2, category: 'leadership' },
+  { key: 'Vice President', bnLabel: 'সহ-সভাপতি', order: 3, category: 'leadership' },
+  { key: 'General Secretary', bnLabel: 'সাধারণ সম্পাদক', order: 4, category: 'leadership' },
+  { key: 'Joint Secretary', bnLabel: 'যুগ্ম সাধারণ সম্পাদক', order: 5, category: 'secretariat' },
+  { key: 'Organizing Secretary', bnLabel: 'সাংগঠনিক সম্পাদক', order: 6, category: 'secretariat' },
+  { key: 'Office Secretary', bnLabel: 'দপ্তর সম্পাদক', order: 7, category: 'secretariat' },
+  { key: 'Finance Secretary', bnLabel: 'অর্থ সম্পাদক', order: 8, category: 'secretariat' },
+  { key: 'Sports Secretary', bnLabel: 'ক্রীড়া সম্পাদক', order: 9, category: 'secretariat' },
+  { key: 'Cultural Secretary', bnLabel: 'সাংস্কৃতিক সম্পাদক', order: 10, category: 'secretariat' },
+  { key: 'Publicity Secretary', bnLabel: 'প্রচার সম্পাদক', order: 11, category: 'secretariat' },
+  { key: 'Executive Member', bnLabel: 'কার্যনির্বাহী সদস্য', order: 12, category: 'executive' },
+];
+
+export const COMMITTEE_SESSIONS = [
+  '২০২৬-২৭',
+  '২০২৫-২৬',
+  '২০২৪-২৫',
+  '২০২৩-২৪',
+  '২০২২-২৩',
+];
+
+export interface CommitteeMemberRecord {
+  id: string;
+  session: string;
+  scope: 'district' | 'upazila';
+  upazila: UpazilaName;
+  userId?: string;
+  memberId?: string;
+  name: string;
+  photoUrl?: string;
+  position: string;
+  positionOrder: number;
+  department: string;
+  studentSession: string;
+  phone?: string;
+  email?: string;
+  assignedBy?: string;
+  createdAt: number;
+}
+
+
 // Full Firestore user document. Hidden fields (securityKey, committeeCode,
 // approvedBy) are stored but never surfaced to the UI.
 export interface FirestoreUser {
@@ -36,6 +102,12 @@ export interface FirestoreUser {
   status: UserStatus;
   createdAt: number;
   updatedAt: number;
+  department?: string | null;
+  studentSession?: string | null;
+  bloodGroup?: string | null;
+  phone?: string | null;
+  hall?: string | null;
+  bio?: string | null;
   // Hidden — never expose in UI
   securityKey?: string;
   committeeCode?: string;
@@ -56,6 +128,12 @@ export interface AppUser {
   upazila?: UpazilaName;
   position?: string | null;
   committeeType?: CommitteeType;
+  department?: string | null;
+  studentSession?: string | null;
+  bloodGroup?: string | null;
+  phone?: string | null;
+  hall?: string | null;
+  bio?: string | null;
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
@@ -74,6 +152,30 @@ export const STATUS_LABELS: Record<UserStatus, string> = {
   suspended: 'স্থগিত',
   deleted: 'মুছে ফেলা হয়েছে',
 };
+
+const ROLE_ALIASES: Record<string, UserRole> = {
+  student: 'student',
+  teacher: 'teacher',
+  alumni: 'alumni',
+  upazila_committee: 'upazila_committee',
+  upazila_committee_member: 'upazila_committee',
+  district_committee: 'district_committee',
+  district_committee_member: 'district_committee',
+  upazila_admin: 'upazila_admin',
+  upazilaadmin: 'upazila_admin',
+  district_admin: 'district_admin',
+  districtadmin: 'district_admin',
+  admin: 'district_admin',
+  super_admin: 'district_admin',
+  superadmin: 'district_admin',
+  administrator: 'district_admin',
+};
+
+export function normalizeUserRole(role: unknown): UserRole {
+  if (typeof role !== 'string') return 'student';
+  const normalized = role.trim().toLowerCase().replace(/[-\s]+/g, '_');
+  return ROLE_ALIASES[normalized] ?? 'student';
+}
 
 // Roles that may self-register.
 export const SELF_REGISTER_ROLES: UserRole[] = ['student', 'teacher', 'alumni'];
@@ -98,19 +200,40 @@ export const UPAZILA_OPTIONS: UpazilaName[] = [
   'হরিণাকুণ্ডু',
 ];
 
-// ===== Content types (unchanged) =====
+// ===== Content types =====
+
+export type NoticeCategory = 'জরুরি' | 'সাধারণ' | 'অনুষ্ঠান' | 'নির্বাচন' | 'পরীক্ষা/ভর্তি' | 'বৃত্তি';
 
 export interface Notice {
   id: string;
   title: string;
   body: string;
-  category: 'জরুরি' | 'সাধারণ' | 'অনুষ্ঠান' | 'নির্বাচন';
+  category: NoticeCategory;
   date: string;
   attachmentUrl?: string;
   pinned?: boolean;
   authorId?: string;
+  authorName?: string;
   scope?: 'district' | 'upazila';
   upazila?: UpazilaName;
+}
+
+export interface MemoryAlbum {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  location: string;
+  photos: string[];
+  videoUrl?: string;
+  category: string;
+  authorId?: string;
+  authorName?: string;
+  authorPhoto?: string;
+  authorRole?: string;
+  scope?: 'district' | 'upazila';
+  upazila?: UpazilaName;
+  createdAt: number;
 }
 
 export interface OrgEvent {
@@ -118,12 +241,54 @@ export interface OrgEvent {
   title: string;
   description: string;
   date: string;
+  time?: string;
   location: string;
+  chiefGuest?: string;
   coverImage?: string;
   status: 'upcoming' | 'ongoing' | 'past';
+  registrationOpen?: boolean;
+  registrationFee?: number;
+  photos?: string[];
+  videoUrl?: string;
+  participantsCount?: number;
   authorId?: string;
   scope?: 'district' | 'upazila';
   upazila?: UpazilaName;
+}
+
+export interface EventRegistrationRecord {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  userId?: string;
+  name: string;
+  email: string;
+  phone: string;
+  department: string;
+  session: string;
+  paymentTrx?: string;
+  status: 'confirmed' | 'pending';
+  createdAt: number;
+}
+
+export type MembershipPaymentStatus = 'paid' | 'pending' | 'expired';
+
+export interface MembershipPayment {
+  id: string;
+  userId?: string;
+  memberName: string;
+  email: string;
+  phone: string;
+  upazila: UpazilaName;
+  department: string;
+  session: string;
+  amount: number;
+  paymentMethod: 'bKash' | 'Nagad' | 'Rocket' | 'Bank';
+  trxId: string;
+  status: MembershipPaymentStatus;
+  paidDate?: string;
+  expiryDate?: string;
+  createdAt: number;
 }
 
 export interface Member {
@@ -267,6 +432,7 @@ export type AuditAction =
   | 'password_reset'
   | 'email_verified';
 
+
 export interface AuditLog {
   id?: string;
   actorId: string;
@@ -278,3 +444,19 @@ export interface AuditLog {
   details?: string;
   createdAt: number;
 }
+
+export const POSITIONS = [
+  'সভাপতি',
+  'সিনিয়র সহ-সভাপতি',
+  'সহ-সভাপতি',
+  'সাধারণ সম্পাদক',
+  'যুগ্ম সাধারণ সম্পাদক',
+  'সাংগঠনিক সম্পাদক',
+  'দপ্তর সম্পাদক',
+  'অর্থ সম্পাদক',
+  'ক্রীড়া সম্পাদক',
+  'সাংস্কৃতিক সম্পাদক',
+  'প্রচার সম্পাদক',
+  'কার্যনির্বাহী সদস্য',
+] as const;
+

@@ -38,18 +38,109 @@ export async function getMember(id: string): Promise<MemberProfile | null> {
 }
 
 export async function listMembers(status?: MemberStatus): Promise<MemberProfile[]> {
+  let dbMembers: MemberProfile[] = [];
+
+  // 1. Fetch from Supabase 'members' table
   try {
     let q = supabase.from(COL).select('*').order('created_at', { ascending: false });
     if (status) q = q.eq('status', status);
     const { data, error } = await q;
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      return status ? MEMBERS.filter((m) => m.status === status) : MEMBERS;
+    if (!error && data && data.length > 0) {
+      dbMembers = data.map((r) => mapRow(r as Record<string, unknown>));
     }
-    return data.map((r) => mapRow(r as Record<string, unknown>));
   } catch {
-    return status ? MEMBERS.filter((m) => m.status === status) : MEMBERS;
+    // ignore
   }
+
+  // 2. Fetch from Supabase 'profiles' table to include all registered users
+  try {
+    let qProf = supabase.from('profiles').select('*');
+    const { data: profData, error: profError } = await qProf;
+    if (!profError && profData && profData.length > 0) {
+      const profMembers: MemberProfile[] = profData
+        .filter((p: any) => p.name && p.upazila)
+        .map((p: any) => ({
+          id: p.id,
+          uid: p.id,
+          name: p.name || 'সদস্য',
+          photo: p.photo_url || p.photo || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+          department: p.department || 'অনুল্লেখিত',
+          session: p.session || p.student_session || '২০২২-২৩',
+          hall: p.hall || 'অনুল্লেখিত',
+          upazila: (p.upazila || 'ঝিনাইদহ সদর') as UpazilaName,
+          phone: p.phone || '',
+          email: p.email || '',
+          bloodGroup: p.blood_group || p.bloodGroup || 'B+',
+          bio: p.bio || `${p.name} - ${p.position || 'সদস্য'}`,
+          status: p.status === 'suspended' ? 'rejected' : p.status === 'pending' ? 'pending' : 'approved',
+          createdAt: p.created_at ? new Date(p.created_at).getTime() : Date.now(),
+          updatedAt: p.updated_at ? new Date(p.updated_at).getTime() : Date.now(),
+        }));
+      dbMembers = [...dbMembers, ...profMembers];
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. Fallback static MEMBERS data
+  let combined = [...dbMembers, ...MEMBERS];
+
+  // 4. Merge local storage persisted members (jhenaidah_approved_members_v1 & jhenaidah_registered_users_v1)
+  try {
+    const memRaw = localStorage.getItem('jhenaidah_approved_members_v1');
+    if (memRaw) {
+      const localApproved: MemberProfile[] = JSON.parse(memRaw);
+      combined = [...localApproved, ...combined];
+    }
+
+    const regRaw = localStorage.getItem('jhenaidah_registered_users_v1');
+    if (regRaw) {
+      const regList = JSON.parse(regRaw);
+      const localRegistered: MemberProfile[] = regList
+        .filter((r: any) => r.profile && r.profile.upazila)
+        .map((r: any) => ({
+          id: r.profile.uid || `reg-${r.email}`,
+          uid: r.profile.uid,
+          name: r.profile.name,
+          photo: r.profile.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+          department: r.profile.department || 'অনুল্লেখিত',
+          session: r.profile.studentSession || '২০২২-২৩',
+          hall: r.profile.hall || 'অনুল্লেখিত',
+          upazila: r.profile.upazila as UpazilaName,
+          phone: r.profile.phone || '',
+          email: r.email,
+          bloodGroup: r.profile.bloodGroup || 'B+',
+          bio: r.profile.bio || `${r.profile.name} - ${r.profile.role}`,
+          status: r.profile.status === 'pending' ? 'pending' : 'approved',
+          createdAt: r.profile.createdAt || Date.now(),
+          updatedAt: r.profile.updatedAt || Date.now(),
+        }));
+      combined = [...localRegistered, ...combined];
+    }
+  } catch {
+    // ignore
+  }
+
+  // Deduplicate members by Email or ID
+  const uniqueMap = new Map<string, MemberProfile>();
+  for (const m of combined) {
+    const key = (m.email ? m.email.toLowerCase() : m.id);
+    if (!uniqueMap.has(key)) {
+      uniqueMap.set(key, m);
+    } else {
+      // prefer version with upazila or details if available
+      const existing = uniqueMap.get(key)!;
+      if (!existing.upazila && m.upazila) {
+        uniqueMap.set(key, m);
+      }
+    }
+  }
+
+  let finalMembers = Array.from(uniqueMap.values());
+  if (status) {
+    finalMembers = finalMembers.filter((m) => m.status === status);
+  }
+  return finalMembers;
 }
 
 export async function listApprovedMembers(): Promise<MemberProfile[]> {
@@ -189,7 +280,8 @@ export function filterMembers(members: MemberProfile[], f: MemberFilters): Membe
   const q = (f.query ?? '').trim().toLowerCase();
   return members.filter((m) => {
     if (m.status !== 'approved') return false;
-    if (q && !(`${m.name} ${m.email} ${m.department} ${m.upazila ?? ''}`.toLowerCase().includes(q))) return false;
+    const haystack = [m.name, m.email, m.department, m.upazila ?? '', m.hall, m.bio, m.phone].filter(Boolean).join(' ').toLowerCase();
+    if (q && !haystack.includes(q)) return false;
     if (f.department && f.department !== 'all' && m.department !== f.department) return false;
     if (f.session && f.session !== 'all' && m.session !== f.session) return false;
     if (f.upazila && f.upazila !== 'all' && m.upazila !== f.upazila) return false;

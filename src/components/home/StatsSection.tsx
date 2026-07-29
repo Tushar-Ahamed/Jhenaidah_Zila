@@ -1,9 +1,19 @@
+import { useState, useEffect } from 'react';
 import { FadeIn, StaggerGroup, StaggerItem } from '@/components/ui/FadeIn';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { STATS } from '@/data/sampleData';
+import { STATS as DEFAULT_STATS } from '@/data/sampleData';
+import { fetchDynamicStats, type DynamicStat } from '@/services/statsService';
 import { toBnNumber } from '@/utils/format';
 
 export function StatsSection() {
+  const [stats, setStats] = useState<DynamicStat[]>(DEFAULT_STATS);
+
+  useEffect(() => {
+    fetchDynamicStats().then((data) => {
+      if (data && data.length > 0) setStats(data);
+    });
+  }, []);
+
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
       <div className="rounded-3xl bg-bd-gradient p-8 sm:p-12 relative overflow-hidden">
@@ -14,7 +24,7 @@ export function StatsSection() {
             <p className="mt-2 text-white/80 text-sm">এক দশকের বেশি সময় ধরে শিক্ষার্থীদের পাশে</p>
           </div>
           <StaggerGroup className="mt-10 grid grid-cols-2 lg:grid-cols-4 gap-5">
-            {STATS.map((s) => (
+            {stats.map((s) => (
               <StaggerItem key={s.label}>
                 <div className="text-center text-white">
                   <p className="text-4xl sm:text-5xl font-bold">
@@ -32,11 +42,19 @@ export function StatsSection() {
 }
 
 export function StatsSectionWithHeader() {
+  const [stats, setStats] = useState<DynamicStat[]>(DEFAULT_STATS);
+
+  useEffect(() => {
+    fetchDynamicStats().then((data) => {
+      if (data && data.length > 0) setStats(data);
+    });
+  }, []);
+
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
       <SectionHeader title="সংখ্যায় আমরা" subtitle="এক দশকের বেশি সময় ধরে শিক্ষার্থীদের পাশে" align="center" />
       <FadeIn className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-5">
-        {STATS.map((s) => (
+        {stats.map((s) => (
           <div key={s.label} className="card p-6 text-center">
             <p className="text-4xl font-bold text-bd-green-600">{toBnNumber(s.value)}{s.suffix}</p>
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{s.label}</p>

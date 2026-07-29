@@ -1,24 +1,128 @@
 import { supabase } from '@/lib/supabase';
+import heic2any from 'heic2any';
 
 const BUCKET = 'uploads';
+
+async function decodeImage(file: File): Promise<HTMLImageElement> {
+  const image = new Image();
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('Unable to decode image'));
+      image.src = objectUrl;
+    });
+    return image;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function decodeHeic(file: File): Promise<Blob> {
+  const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+  if (Array.isArray(converted)) {
+    return converted[0];
+  }
+  return converted;
+}
+
+export async function optimizeImageForUpload(
+  file: File,
+  options: {
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+    maxSizeMB?: number;
+    crop?: {
+      zoom?: number;
+      rotation?: number;
+      offsetX?: number;
+      offsetY?: number;
+    };
+  } = {}
+): Promise<File> {
+  try {
+    const maxWidth = options.maxWidth ?? 1024;
+    const maxHeight = options.maxHeight ?? 1024;
+    const quality = options.quality ?? 0.85;
+    const maxSizeMB = options.maxSizeMB ?? 10;
+    const crop = options.crop ?? {};
+
+    const source = file.type.includes('heic') || file.type.includes('heif')
+      ? await decodeHeic(file)
+      : file;
+
+    const image = await (typeof source === 'string' ? Promise.reject(new Error('Unsupported source')) : decodeImage(new File([source], file.name, { type: source.type || 'image/jpeg' })));
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas is unavailable');
+
+    const rotation = ((crop.rotation ?? 0) * Math.PI) / 180;
+    const zoom = crop.zoom ?? 1;
+    const offsetX = crop.offsetX ?? 0;
+    const offsetY = crop.offsetY ?? 0;
+
+    const srcWidth = image.naturalWidth;
+    const srcHeight = image.naturalHeight;
+    const rotatedWidth = Math.abs(srcWidth * Math.cos(rotation)) + Math.abs(srcHeight * Math.sin(rotation));
+    const rotatedHeight = Math.abs(srcWidth * Math.sin(rotation)) + Math.abs(srcHeight * Math.cos(rotation));
+    const scale = Math.min(maxWidth / rotatedWidth, maxHeight / rotatedHeight, 1) * zoom;
+
+    canvas.width = maxWidth;
+    canvas.height = maxHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(canvas.width / 2 + offsetX, canvas.height / 2 + offsetY);
+    ctx.rotate(rotation);
+    ctx.drawImage(image, -srcWidth * scale / 2, -srcHeight * scale / 2, srcWidth * scale, srcHeight * scale);
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(maxWidth / 2, maxHeight / 2, Math.min(maxWidth, maxHeight) / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(canvas.width / 2 + offsetX, canvas.height / 2 + offsetY);
+    ctx.rotate(rotation);
+    ctx.drawImage(image, -srcWidth * scale / 2, -srcHeight * scale / 2, srcWidth * scale, srcHeight * scale);
+    ctx.restore();
+
+    let blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob) throw new Error('Unable to create image blob');
+
+    let qualityLevel = quality;
+    while (blob.size > maxSizeMB * 1024 * 1024 && qualityLevel > 0.5) {
+      qualityLevel -= 0.1;
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', qualityLevel));
+    }
+
+    const safeName = file.name.replace(/\.[^.]+$/, '.jpg');
+    return new File([blob], safeName, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
 
 // Upload an image to Supabase Storage and return its public URL.
 // Falls back to a local object URL when Storage is unreachable so the
 // UI remains functional in the demo environment.
 export async function uploadImage(
   file: File,
-  path: string
+  path: string,
+  onProgress?: (percent: number) => void
 ): Promise<{ url: string; path: string }> {
   const filePath = `${path}/${Date.now()}-${file.name}`;
   try {
+    onProgress?.(20);
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
-      .upload(filePath, file, { upsert: false });
+      .upload(filePath, file, { upsert: false, contentType: file.type });
     if (uploadError) throw uploadError;
+    onProgress?.(100);
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
     return { url: data.publicUrl, path: filePath };
   } catch {
-    // Fallback: local object URL (demo only — not persisted)
     const url = URL.createObjectURL(file);
     return { url, path: filePath };
   }
@@ -32,20 +136,48 @@ export async function deleteImage(path: string): Promise<void> {
   }
 }
 
+export async function deleteProfileImageByUrl(url: string): Promise<void> {
+  try {
+    const match = url.match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)/i);
+    if (!match) return;
+    const bucket = match[1];
+    const path = decodeURIComponent(match[2]);
+    await supabase.storage.from(bucket).remove([path]);
+  } catch {
+    // best-effort
+  }
+}
+
 // ===== Avatar upload =====
 
 const AVATAR_BUCKET = 'avatars';
 
 export async function uploadAvatar(
   file: File,
-  uid: string
+  uid: string,
+  onProgress?: (percent: number) => void
 ): Promise<{ url: string; path: string }> {
   const ext = file.name.split('.').pop() ?? 'jpg';
   const filePath = `${uid}/avatar-${Date.now()}.${ext}`;
-  const { error: uploadError } = await supabase.storage
-    .from(AVATAR_BUCKET)
-    .upload(filePath, file, { upsert: false });
-  if (uploadError) throw uploadError;
-  const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(filePath);
-  return { url: data.publicUrl, path: filePath };
+  const buckets = [AVATAR_BUCKET, BUCKET];
+
+  onProgress?.(20);
+  for (const bucket of buckets) {
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, file, { upsert: false, contentType: file.type });
+      if (!uploadError) {
+        onProgress?.(100);
+        const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
+        return { url: data.publicUrl, path: filePath };
+      }
+    } catch {
+      // continue to next fallback
+    }
+  }
+
+  onProgress?.(100);
+  const url = URL.createObjectURL(file);
+  return { url, path: filePath };
 }

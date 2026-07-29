@@ -8,53 +8,51 @@ import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useAuth } from '@/context/AuthContext';
 import { canManageDistrictContent, canManageUpazilaContent } from '@/utils/rbac';
-import { listGallery, createGalleryItem, updateGalleryItem, deleteGalleryItem, type GalleryInput } from '@/services/contentService';
+import { listAlbums, createAlbum, deleteAlbum } from '@/services/albumService';
 import { uploadImage } from '@/services/uploadService';
 import { writeAuditLog } from '@/services/userService';
-import type { GalleryItem } from '@/types';
-import { Image as ImageIcon, Plus, Pencil, Trash2, Save, Upload, X } from 'lucide-react';
+import { UPAZILA_OPTIONS, type MemoryAlbum, type UpazilaName } from '@/types';
+import { Image as ImageIcon, Plus, Trash2, Save, Upload, X, Camera, Film, MapPin } from 'lucide-react';
 import { formatBnDate } from '@/utils/format';
-import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { useForm } from 'react-hook-form';
 
 const categories = ['অনুষ্ঠান', 'সমাজসেবা', 'শিক্ষা সফর', 'আলোচনা', 'সংস্কৃতি', 'ক্রীড়া', 'শিক্ষা'];
-
-interface FormValues {
-  title: string;
-  url: string;
-  category: string;
-  date: string;
-}
 
 export function DashboardGallery() {
   const { user } = useAuth();
   const isDistrict = canManageDistrictContent(user?.role);
   const isUpazila = canManageUpazilaContent(user?.role);
-  const scope: 'district' | 'upazila' = isUpazila && !isDistrict ? 'upazila' : 'district';
-  const upazila = isUpazila && !isDistrict ? user?.upazila : undefined;
+  const defaultScope: 'district' | 'upazila' = isUpazila && !isDistrict ? 'upazila' : 'district';
+  const defaultUpazila = user?.upazila || UPAZILA_OPTIONS[0];
 
-  const [items, setItems] = useState<GalleryItem[]>([]);
+  const [albums, setAlbums] = useState<MemoryAlbum[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [lightbox, setLightbox] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<GalleryItem | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<FormValues>();
-  const url = watch('url');
+  // Form State
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [location, setLocation] = useState('');
+  const [category, setCategory] = useState('অনুষ্ঠান');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photoInput, setPhotoInput] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [scope, setScope] = useState<'district' | 'upazila'>(defaultScope);
+  const [upazila, setUpazila] = useState<UpazilaName>(defaultUpazila);
 
   const load = async () => {
     setLoading(true);
     setError(false);
     try {
-      const list = await listGallery(scope, upazila);
-      setItems(list);
+      const list = await listAlbums();
+      setAlbums(list);
     } catch {
       setError(true);
     } finally {
@@ -65,52 +63,85 @@ export function DashboardGallery() {
   useEffect(() => { load(); }, []);
 
   const openCreate = () => {
-    setEditing(null);
-    reset({ title: '', url: '', category: 'অনুষ্ঠান', date: new Date().toISOString().slice(0, 10) });
+    setTitle('');
+    setDescription('');
+    setDate(new Date().toISOString().slice(0, 10));
+    setLocation('');
+    setCategory('অনুষ্ঠান');
+    setPhotos([]);
+    setPhotoInput('');
+    setVideoUrl('');
+    setScope(defaultScope);
+    setUpazila(defaultUpazila);
     setModalOpen(true);
   };
 
-  const openEdit = (g: GalleryItem) => {
-    setEditing(g);
-    reset({ title: g.title, url: g.url, category: g.category, date: g.date.slice(0, 10) });
-    setModalOpen(true);
-  };
-
-  const handleUpload = async (file: File) => {
+  const handleUploadFile = async (file: File) => {
     setUploading(true);
     try {
-      const { url } = await uploadImage(file, `gallery/${scope}`);
-      setValue('url', url);
+      const { url } = await uploadImage(file, `albums/${scope}`);
+      setPhotos((prev) => [...prev, url]);
       toast.success('ছবি আপলোড সম্পন্ন');
     } catch {
-      toast.error('আপলোড ব্যর্থ হয়েছে');
+      toast.error('ছবি আপলোড ব্যর্থ হয়েছে');
     } finally {
       setUploading(false);
     }
   };
 
-  const onSubmit = async (data: FormValues) => {
-    setSaving(true);
+  const handleAddPhotoInput = () => {
+    if (!photoInput.trim()) return;
+    setPhotos((prev) => [...prev, photoInput.trim()]);
+    setPhotoInput('');
+  };
+
+  const handleRemovePhoto = (idx: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      toast.error('শিরোনাম আবশ্যক');
+      return;
+    }
+    if (photos.length === 0 && !videoUrl) {
+      toast.error('কমপক্ষে ১টি ছবি বা ভিডিও প্রয়োজন');
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      const payload: GalleryInput = {
-        title: data.title, url: data.url, category: data.category, date: data.date,
-        scope, upazila, authorId: user!.uid,
-      };
-      if (editing) {
-        await updateGalleryItem(editing.id, payload);
-        await writeAuditLog({ actorId: user!.uid, actorEmail: user!.email ?? '', actorRole: user!.role, action: 'profile_update', targetId: editing.id, details: `গ্যালারি সম্পাদনা: ${data.title}` });
-        toast.success('গ্যালারি হালনাগাদ সম্পন্ন');
-      } else {
-        await createGalleryItem(payload);
-        await writeAuditLog({ actorId: user!.uid, actorEmail: user!.email ?? '', actorRole: user!.role, action: 'account_created', details: `নতুন গ্যালারি: ${data.title}` });
-        toast.success('নতুন ছবি যোগ হয়েছে');
-      }
+      await createAlbum({
+        title,
+        description,
+        date,
+        location,
+        photos,
+        videoUrl: videoUrl || undefined,
+        category,
+        authorId: user?.uid,
+        authorName: user?.displayName || 'কমিটি সদস্য',
+        authorRole: isDistrict ? 'জেলা কমিটি / অ্যাডমিন' : 'উপজেলা কমিটি',
+        scope,
+        upazila: scope === 'upazila' ? upazila : undefined,
+      });
+
+      await writeAuditLog({
+        actorId: user!.uid,
+        actorEmail: user!.email ?? '',
+        actorRole: user!.role,
+        action: 'account_created',
+        details: `নতুন স্মৃতি অ্যালবাম প্রকাশ: ${title}`,
+      });
+
+      toast.success('স্মৃতি অ্যালবাম সফলভাবে তৈরি হয়েছে');
       setModalOpen(false);
       await load();
     } catch {
-      toast.error('কাজটি সম্পন্ন করা যায়নি');
+      toast.error('অ্যালবাম তৈরিতে সমস্যা হয়েছে');
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
@@ -118,9 +149,16 @@ export function DashboardGallery() {
     if (!deleteId) return;
     setDeleting(true);
     try {
-      await deleteGalleryItem(deleteId);
-      await writeAuditLog({ actorId: user!.uid, actorEmail: user!.email ?? '', actorRole: user!.role, action: 'account_deleted', targetId: deleteId, details: 'গ্যালারি ছবি মুছে ফেলা হয়েছে' });
-      toast.success('ছবি মুছে ফেলা হয়েছে');
+      await deleteAlbum(deleteId);
+      await writeAuditLog({
+        actorId: user!.uid,
+        actorEmail: user!.email ?? '',
+        actorRole: user!.role,
+        action: 'account_deleted',
+        targetId: deleteId,
+        details: 'স্মৃতি অ্যালবাম মুছে ফেলা হয়েছে',
+      });
+      toast.success('অ্যালবাম মুছে ফেলা হয়েছে');
       setDeleteId(null);
       await load();
     } catch {
@@ -135,41 +173,72 @@ export function DashboardGallery() {
       <FadeIn>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">গ্যালারি ব্যবস্থাপনা</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <Camera className="h-6 w-6 text-bd-green-600" />
+              স্মৃতি অ্যালবাম ব্যবস্থাপনা
+            </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {scope === 'district' ? 'জেলা পর্যায়ের গ্যালারি' : `${upazila ?? ''} উপজেলার গ্যালারি`}
+              ফেইসবুক-স্টাইল ফটো গ্যালারি ও ভিডিও অ্যালবাম তৈরি ও পরিচালনা করুন
             </p>
           </div>
-          <button onClick={openCreate} className="btn-primary"><Plus className="h-4 w-4" /> ছবি যোগ করুন</button>
+          <button onClick={openCreate} className="btn-primary">
+            <Plus className="h-4 w-4" /> নতুন স্মৃতি অ্যালবাম প্রকাশ
+          </button>
         </div>
       </FadeIn>
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}</div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}</div>
       ) : error ? (
         <ErrorState onRetry={load} />
-      ) : items.length === 0 ? (
-        <EmptyState icon={<ImageIcon className="h-8 w-8" />} title="কোনো ছবি নেই" description="এখনো কোনো ছবি যোগ করা হয়নি।" action={<button onClick={openCreate} className="btn-primary"><Plus className="h-4 w-4" /> ছবি যোগ করুন</button>} />
+      ) : albums.length === 0 ? (
+        <EmptyState
+          icon={<ImageIcon className="h-8 w-8" />}
+          title="কোনো স্মৃতি অ্যালবাম নেই"
+          description="এখনো কোনো স্মৃতি অ্যালবাম তৈরি করা হয়নি।"
+          action={<button onClick={openCreate} className="btn-primary"><Plus className="h-4 w-4" /> নতুন অ্যালবাম</button>}
+        />
       ) : (
-        <StaggerGroup className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {items.map((g) => (
-            <StaggerItem key={g.id}>
-              <div className="card overflow-hidden group">
-                <button onClick={() => setLightbox(g.url)} className="relative block w-full aspect-[4/3] overflow-hidden">
-                  <img src={g.url} alt={g.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center gap-2">
-                    <div className="opacity-0 group-hover:opacity-100 transition flex gap-1">
-                      <button onClick={(e) => { e.stopPropagation(); openEdit(g); }} className="grid h-8 w-8 place-items-center rounded-lg bg-white/90 text-gray-700 hover:bg-white"><Pencil className="h-4 w-4" /></button>
-                      <button onClick={(e) => { e.stopPropagation(); setDeleteId(g.id); }} className="grid h-8 w-8 place-items-center rounded-lg bg-bd-red-600 text-white hover:bg-bd-red-700"><Trash2 className="h-4 w-4" /></button>
-                    </div>
+        <StaggerGroup className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {albums.map((album) => (
+            <StaggerItem key={album.id}>
+              <div className="card p-4 flex flex-col justify-between h-full border-t-4 border-t-bd-green-600">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <Badge variant="green">{album.category}</Badge>
+                    <Badge variant={album.scope === 'district' ? 'blue' : 'gray'}>
+                      {album.scope === 'district' ? 'জেলা' : album.upazila}
+                    </Badge>
                   </div>
-                </button>
-                <div className="p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white line-clamp-1">{g.title}</p>
-                    <Badge variant="green">{g.category}</Badge>
+
+                  <h3 className="font-bold text-base text-gray-900 dark:text-white line-clamp-1">{album.title}</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">{album.description}</p>
+
+                  <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
+                    <span>{formatBnDate(album.date)}</span>
+                    {album.location && (
+                      <span className="flex items-center gap-1 text-bd-green-600">
+                        <MapPin className="h-3 w-3" /> {album.location}
+                      </span>
+                    )}
                   </div>
-                  <p className="mt-1 text-xs text-gray-400">{formatBnDate(g.date)}</p>
+
+                  {/* Thumbnail Previews */}
+                  <div className="mt-3 flex items-center gap-1 overflow-hidden h-14 rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
+                    {album.photos.slice(0, 4).map((p, idx) => (
+                      <img key={idx} src={p} alt="thumb" className="h-full flex-1 object-cover rounded" />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between text-xs">
+                  <span className="text-gray-500">{album.photos.length} টি ছবি</span>
+                  <button
+                    onClick={() => setDeleteId(album.id)}
+                    className="chip bg-bd-red-50 text-bd-red-600 hover:bg-bd-red-100 dark:bg-bd-red-900/30 dark:text-bd-red-300"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> মুছুন
+                  </button>
                 </div>
               </div>
             </StaggerItem>
@@ -177,58 +246,166 @@ export function DashboardGallery() {
         </StaggerGroup>
       )}
 
-      {/* Create/Edit Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'ছবি সম্পাদনা' : 'নতুন ছবি'} size="md">
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {/* Create Memory Album Modal */}
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="নতুন স্মৃতি অ্যালবাম প্রকাশ" size="lg">
+        <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">ছবি</label>
-            <div className="mt-1.5 flex flex-col sm:flex-row gap-4">
-              <div className="h-28 w-full sm:w-40 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0 grid place-items-center">
-                {url ? <img src={url} alt="preview" className="h-full w-full object-cover" /> : <ImageIcon className="h-8 w-8 text-gray-400" />}
-              </div>
-              <div className="flex-1 flex flex-col gap-2">
-                <label className="btn-ghost border border-dashed border-gray-300 dark:border-gray-700 cursor-pointer w-fit">
-                  <Upload className="h-4 w-4" /> {uploading ? 'আপলোড হচ্ছে...' : 'ছবি আপলোড করুন'}
-                  <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} disabled={uploading} />
-                </label>
-                <input className="input" placeholder="অথবা ছবি URL দিন" {...register('url', { required: 'ছবি আবশ্যক' })} />
-                {errors.url && <p className="text-xs text-bd-red-600">{errors.url.message}</p>}
-              </div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">অ্যালবাম শিরোনাম *</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="যেমন: বার্ষিক রক্তদান শিবির ও মেধা সংবর্ধনা"
+              className="input mt-1.5"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">বিবরণ / ক্যাপশন</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="অনুষ্ঠানের কিছু বিশেষ বর্ণনা..."
+              rows={3}
+              className="input mt-1.5 resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">তারিখ</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="input mt-1.5"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">স্থান (Location Tag)</label>
+              <input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="যেমন: টিটিসি মিলনায়তন"
+                className="input mt-1.5"
+              />
             </div>
           </div>
+
+          {/* Photo Management */}
           <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">শিরোনাম</label>
-            <input className="input mt-1.5" {...register('title', { required: 'শিরোনাম আবশ্যক' })} />
-            {errors.title && <p className="mt-1 text-xs text-bd-red-600">{errors.title.message}</p>}
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">ছবি সমুহ (Multi-Photos)</label>
+            <div className="mt-1.5 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <label className="btn-ghost border border-dashed border-gray-300 dark:border-gray-700 cursor-pointer text-xs shrink-0">
+                  <Upload className="h-4 w-4" /> {uploading ? 'আপলোড...' : 'ফাইল আপলোড'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadFile(f);
+                    }}
+                    disabled={uploading}
+                  />
+                </label>
+                <input
+                  value={photoInput}
+                  onChange={(e) => setPhotoInput(e.target.value)}
+                  placeholder="অথবা ছবি URL দিয়ে যোগ করুন"
+                  className="input flex-1"
+                />
+                <button type="button" onClick={handleAddPhotoInput} className="btn-ghost text-xs">
+                  + যোগ
+                </button>
+              </div>
+
+              {photos.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                  {photos.map((p, idx) => (
+                    <div key={idx} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200">
+                      <img src={p} alt="uploaded" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePhoto(idx)}
+                        className="absolute top-0.5 right-0.5 bg-black/70 text-white rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">ভিডিও URL (ইউটিউব/MP4)</label>
+            <input
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
+              className="input mt-1.5"
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300">ক্যাটেগরি</label>
-              <select className="input mt-1.5" {...register('category')}>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="input mt-1.5"
+              >
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">তারিখ</label>
-              <input type="date" className="input mt-1.5" {...register('date', { required: 'তারিখ আবশ্যক' })} />
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">পরিসর (Scope)</label>
+              <select
+                value={scope}
+                onChange={(e) => setScope(e.target.value as 'district' | 'upazila')}
+                className="input mt-1.5"
+                disabled={!isDistrict}
+              >
+                {isDistrict && <option value="district">জেলা সমিতি</option>}
+                <option value="upazila">উপজেলা শাখা</option>
+              </select>
             </div>
           </div>
+
+          {scope === 'upazila' && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">উপজেলা</label>
+              <select
+                value={upazila || ''}
+                onChange={(e) => setUpazila(e.target.value as UpazilaName)}
+                className="input mt-1.5"
+              >
+                {UPAZILA_OPTIONS.map((u) => <option key={u} value={u ?? ''}>{u}</option>)}
+              </select>
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving || uploading} className="btn-primary flex-1"><Save className="h-4 w-4" /> {saving ? 'সংরক্ষণ হচ্ছে...' : 'সংরক্ষণ'}</button>
+            <button type="submit" disabled={submitting || uploading} className="btn-primary flex-1">
+              <Save className="h-4 w-4" /> {submitting ? 'প্রকাশ হচ্ছে...' : 'অ্যালবাম প্রকাশ করুন'}
+            </button>
             <button type="button" onClick={() => setModalOpen(false)} className="btn-ghost">বাতিল</button>
           </div>
         </form>
       </Modal>
 
-      <ConfirmDialog open={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={confirmDelete} title="ছবি মুছুন" message="আপনি কি এই ছবিটি মুছে ফেলতে চান?" confirmLabel="মুছে ফেলুন" loading={deleting} />
-
-      {/* Lightbox */}
-      <AnimatePresence>
-        {lightbox && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setLightbox(null)} className="fixed inset-0 z-[100] grid place-items-center bg-black/80 backdrop-blur p-4">
-            <button className="absolute top-4 right-4 grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20" onClick={() => setLightbox(null)}><X className="h-5 w-5" /></button>
-            <motion.img initial={{ scale: 0.9 }} animate={{ scale: 1 }} src={lightbox} alt="preview" className="max-h-[85vh] max-w-[90vw] rounded-2xl shadow-2xl" />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ConfirmDialog
+        open={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="অ্যালবাম মুছুন"
+        message="আপনি কি এই স্মৃতি অ্যালবামটি মুছে ফেলতে চান?"
+        confirmLabel="মুছে ফেলুন"
+        loading={deleting}
+      />
     </div>
   );
 }

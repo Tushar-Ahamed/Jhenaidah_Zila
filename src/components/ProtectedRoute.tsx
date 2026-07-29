@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import type { UserRole } from '@/types';
+import { normalizeUserRole, type UserRole } from '@/types';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 
 interface ProtectedRouteProps {
@@ -32,7 +32,8 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
   }
 
   // Role-based access control.
-  if (roles && !roles.includes(user.role)) {
+  const normalizedRole = normalizeUserRole(user.role);
+  if (roles && !roles.includes(normalizedRole)) {
     return <Navigate to="/unauthorized" replace />;
   }
 

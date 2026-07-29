@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { UPAZILAS, COMMITTEE } from '@/data/sampleData';
+import { UPAZILAS } from '@/data/sampleData';
 import { SEO } from '@/components/SEO';
 import { FadeIn, StaggerGroup, StaggerItem } from '@/components/ui/FadeIn';
 import { Badge } from '@/components/ui/Badge';
@@ -9,8 +9,9 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { MemberCard } from '@/components/MemberCard';
 import { listNotices, listEvents, listGallery } from '@/services/contentService';
 import { listApprovedMembers } from '@/services/memberService';
-import type { Notice, OrgEvent, GalleryItem, MemberProfile, UpazilaName } from '@/types';
-import { ArrowLeft, MapPin, Users, UserCheck, Star, CalendarDays, Pin, FileText, X } from 'lucide-react';
+import { listCommitteeMembers } from '@/services/committeeService';
+import type { Notice, OrgEvent, GalleryItem, MemberProfile, UpazilaName, CommitteeMemberRecord } from '@/types';
+import { ArrowLeft, MapPin, Users, UserCheck, Star, CalendarDays, Pin, FileText, X, Phone, Mail } from 'lucide-react';
 import { toBnNumber, formatBnDate, relativeBn, isUpcoming, classNames } from '@/utils/format';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -38,6 +39,7 @@ export function UpazilaDetailPage() {
   const [events, setEvents] = useState<OrgEvent[]>([]);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [members, setMembers] = useState<MemberProfile[]>([]);
+  const [committeeMembers, setCommitteeMembers] = useState<CommitteeMemberRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [lightbox, setLightbox] = useState<string | null>(null);
 
@@ -47,17 +49,19 @@ export function UpazilaDetailPage() {
     (async () => {
       setLoading(true);
       const upazilaName = upazila.name as UpazilaName;
-      const [n, e, g, m] = await Promise.all([
+      const [n, e, g, m, cm] = await Promise.all([
         listNotices('upazila', upazilaName),
         listEvents('upazila', upazilaName),
         listGallery('upazila', upazilaName),
         listApprovedMembers(),
+        listCommitteeMembers('২০২৬-২৭', 'upazila', upazilaName),
       ]);
       if (!active) return;
       setNotices(n);
       setEvents(e);
       setGallery(g);
       setMembers(m.filter((mem) => mem.upazila === upazilaName));
+      setCommitteeMembers(cm);
       setLoading(false);
     })();
     return () => { active = false; };
@@ -71,7 +75,9 @@ export function UpazilaDetailPage() {
     );
   }
 
-  const committee = COMMITTEE.filter((c) => c.upazila === upazila.name || !c.upazila).slice(0, 6);
+  // Find assigned president & secretary dynamically
+  const dynamicPresident = committeeMembers.find(c => c.position === 'সভাপতি' || c.position.includes('সভাপতি'))?.name || upazila.president;
+  const dynamicSecretary = committeeMembers.find(c => c.position === 'সাধারণ সম্পাদক' || c.position.includes('সম্পাদক'))?.name || upazila.secretary;
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -94,9 +100,9 @@ export function UpazilaDetailPage() {
               <h1 className="text-2xl sm:text-3xl font-bold">{upazila.name}</h1>
               <p className="mt-1 text-white/80 text-sm">{upazila.description}</p>
               <div className="mt-3 flex flex-wrap gap-3 text-xs text-white/85">
-                <span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> {toBnNumber(upazila.memberCount)} জন সদস্য</span>
-                <span className="flex items-center gap-1.5"><UserCheck className="h-3.5 w-3.5" /> সভাপতি: {upazila.president}</span>
-                <span className="flex items-center gap-1.5"><UserCheck className="h-3.5 w-3.5" /> সম্পাদক: {upazila.secretary}</span>
+                <span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> {toBnNumber(members.length || upazila.memberCount)} জন সদস্য</span>
+                <span className="flex items-center gap-1.5"><UserCheck className="h-3.5 w-3.5 text-amber-300" /> সভাপতি: {dynamicPresident}</span>
+                <span className="flex items-center gap-1.5"><UserCheck className="h-3.5 w-3.5 text-emerald-300" /> সম্পাদক: {dynamicSecretary}</span>
               </div>
             </div>
           </div>
@@ -117,7 +123,8 @@ export function UpazilaDetailPage() {
           <FadeIn className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-3">
               {[
-                { label: 'সদস্য', value: members.length, suffix: ' জন' },
+                { label: 'কমিটি সদস্য', value: committeeMembers.length, suffix: ' জন' },
+                { label: 'সাধারণ সদস্য', value: members.length, suffix: ' জন' },
                 { label: 'আয়োজন', value: events.length, suffix: '' },
                 { label: 'নোটিশ', value: notices.length, suffix: '' },
                 { label: 'গ্যালারি', value: gallery.length, suffix: ' টি' },
@@ -138,22 +145,37 @@ export function UpazilaDetailPage() {
             </div>
           </FadeIn>
         ) : tab === 'committee' ? (
-          <StaggerGroup className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {committee.map((m) => (
-              <StaggerItem key={m.id}>
-                <div className="card p-5">
-                  <div className="flex items-center gap-3">
-                    <div className="grid h-12 w-12 place-items-center rounded-2xl bg-bd-gradient text-white text-lg font-semibold shrink-0">{m.name[0]}</div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 dark:text-white truncate">{m.name}</p>
-                      <p className="text-sm text-bd-green-700 dark:text-bd-green-300">{m.designation}</p>
+          committeeMembers.length === 0 ? (
+            <EmptyState icon={<Users className="h-8 w-8" />} title="কোনো কমিটি নিযুক্তি নেই" description="এই উপজেলায় এখনো কোনো কমিটি সদস্য পদে যুক্ত করা হয়নি।" />
+          ) : (
+            <StaggerGroup className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {committeeMembers.map((m) => (
+                <StaggerItem key={m.id}>
+                  <div className="card p-5 h-full flex flex-col justify-between border-t-4 border-t-bd-green-600">
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <div className="grid h-12 w-12 place-items-center rounded-2xl bg-bd-gradient text-white text-lg font-semibold shrink-0 overflow-hidden">
+                          {m.photoUrl ? <img src={m.photoUrl} alt={m.name} className="h-full w-full object-cover" /> : m.name[0]}
+                        </div>
+                        <div className="min-w-0">
+                          <Badge variant="green" className="mb-1">{m.position}</Badge>
+                          <p className="font-bold text-gray-900 dark:text-white truncate">{m.name}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 text-xs text-gray-500 space-y-1">
+                        <p><span className="font-semibold">বিভাগ:</span> {m.department || 'অনুল্লেখিত'}</p>
+                        <p><span className="font-semibold">সেশন:</span> {m.studentSession || 'অনুল্লেখিত'}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-2 flex flex-wrap gap-2 text-xs">
+                      {m.phone && <Badge variant="gray"><Phone className="h-3 w-3" /> {m.phone}</Badge>}
+                      {m.email && <Badge variant="gray"><Mail className="h-3 w-3" /> {m.email}</Badge>}
                     </div>
                   </div>
-                  <p className="mt-3 text-xs text-gray-400">{m.organization}</p>
-                </div>
-              </StaggerItem>
-            ))}
-          </StaggerGroup>
+                </StaggerItem>
+              ))}
+            </StaggerGroup>
+          )
         ) : tab === 'members' ? (
           members.length === 0 ? (
             <EmptyState icon={<Users className="h-8 w-8" />} title="কোনো সদস্য নেই" description="এই উপজেলায় এখনো কোনো সদস্য যুক্ত নেই।" />

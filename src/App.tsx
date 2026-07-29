@@ -40,6 +40,7 @@ const DashboardCreateCommittee = lazy(() => import('@/pages/dashboard/DashboardC
 const DashboardAudit = lazy(() => import('@/pages/dashboard/DashboardAudit').then((m) => ({ default: m.DashboardAudit })));
 const DashboardMembers = lazy(() => import('@/pages/dashboard/DashboardMembers').then((m) => ({ default: m.DashboardMembers })));
 const DashboardMemberEdit = lazy(() => import('@/pages/dashboard/DashboardMemberEdit').then((m) => ({ default: m.DashboardMemberEdit })));
+const DashboardMembership = lazy(() => import('@/pages/dashboard/DashboardMembership').then((m) => ({ default: m.DashboardMembership })));
 
 const COMMITTEE_ROLES = ['upazila_committee', 'district_committee', 'upazila_admin', 'district_admin'] as const;
 const ADMIN_ROLES = ['upazila_admin', 'district_admin'] as const;
@@ -91,10 +92,11 @@ export default function App() {
             <Route path="gallery" element={<ProtectedRoute roles={[...COMMITTEE_ROLES]}><DashboardGallery /></ProtectedRoute>} />
             <Route path="members" element={<DashboardMembers />} />
             <Route path="members/:id/edit" element={<ProtectedRoute roles={[...ADMIN_ROLES]}><DashboardMemberEdit /></ProtectedRoute>} />
+            <Route path="membership" element={<DashboardMembership />} />
             <Route path="profile" element={<DashboardProfile />} />
             <Route path="settings" element={<DashboardSettings />} />
             <Route path="users" element={<ProtectedRoute roles={[...ADMIN_ROLES]}><DashboardUsers /></ProtectedRoute>} />
-            <Route path="create-committee" element={<ProtectedRoute roles={['district_admin']}><DashboardCreateCommittee /></ProtectedRoute>} />
+            <Route path="create-committee" element={<ProtectedRoute roles={['district_admin', 'upazila_admin']}><DashboardCreateCommittee /></ProtectedRoute>} />
             <Route path="audit" element={<ProtectedRoute roles={[...ADMIN_ROLES]}><DashboardAudit /></ProtectedRoute>} />
           </Route>
 

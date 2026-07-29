@@ -51,37 +51,37 @@
 
 @layer components {
   .glass {
-    @apply bg-white/70 dark:bg-gray-900/60 backdrop-blur-xl border border-white/40 dark:border-white/10;
+    @apply bg-white/70 dark:bg-gray-900/60 backdrop-blur-xl border border-white/50 dark:border-gray-800/60 shadow-[0_8px_32px_0_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.37)];
   }
   .glass-card {
-    @apply glass rounded-2xl shadow-glass;
+    @apply glass rounded-2xl shadow-glass transition-all duration-300 hover:shadow-glass-lg hover:-translate-y-0.5;
   }
   .glass-strong {
-    @apply bg-white/85 dark:bg-gray-900/80 backdrop-blur-2xl border border-white/50 dark:border-white/10;
+    @apply bg-white/90 dark:bg-gray-900/85 backdrop-blur-2xl border border-white/60 dark:border-gray-800/80 shadow-[0_12px_40px_0_rgba(0,0,0,0.08)];
   }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-bd-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-bd-green-700 hover:shadow-glow active:scale-[0.98] disabled:opacity-60 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-bd-green-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(5,150,105,0.3)] transition-all duration-200 hover:from-bd-green-700 hover:to-emerald-700 hover:shadow-[0_6px_24px_rgba(5,150,105,0.45)] hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60 disabled:pointer-events-none;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-bd-green-700 dark:text-bd-green-300 transition hover:bg-bd-green-50 dark:hover:bg-bd-green-900/30 active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-5 py-2.5 text-sm font-semibold text-bd-green-700 dark:text-bd-green-300 transition-all duration-200 hover:bg-bd-green-50/80 hover:border-bd-green-200/60 dark:hover:bg-bd-green-900/30 dark:hover:border-bd-green-800/50 active:scale-[0.98];
   }
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-bd-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-bd-red-700 active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-bd-red-600 to-rose-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(225,29,72,0.3)] transition-all duration-200 hover:from-bd-red-700 hover:to-rose-700 hover:shadow-[0_6px_24px_rgba(225,29,72,0.45)] hover:-translate-y-0.5 active:scale-[0.98];
   }
   .input {
-    @apply w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 transition focus:border-bd-green-500 focus:ring-2 focus:ring-bd-green-500/30 focus:outline-none;
+    @apply w-full rounded-xl border border-gray-200/80 dark:border-gray-700/80 bg-white/90 dark:bg-gray-900/90 px-4 py-2.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 transition-all duration-200 focus:border-bd-green-500 focus:ring-4 focus:ring-bd-green-500/15 focus:bg-white dark:focus:bg-gray-900 focus:outline-none shadow-sm;
   }
   .card {
-    @apply rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-soft transition hover:shadow-glass;
+    @apply rounded-2xl bg-white dark:bg-gray-900 border border-gray-100/90 dark:border-gray-800/90 shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all duration-300 hover:shadow-[0_12px_36px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_12px_36px_rgba(0,0,0,0.4)] hover:-translate-y-0.5;
   }
   .section-title {
-    @apply text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white;
+    @apply text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white;
   }
   .section-subtitle {
-    @apply mt-2 text-gray-500 dark:text-gray-400 text-sm sm:text-base;
+    @apply mt-2 text-gray-500 dark:text-gray-400 text-sm sm:text-base font-normal;
   }
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-200;
   }
 }
 

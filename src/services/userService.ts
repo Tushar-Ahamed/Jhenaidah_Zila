@@ -100,14 +100,68 @@ export interface UpdateProfileInput {
   upazila?: UpazilaName;
   position?: string | null;
   photoUrl?: string | null;
+  department?: string | null;
+  studentSession?: string | null;
+  bloodGroup?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  bio?: string | null;
+  hall?: string | null;
 }
 
 export async function updateOwnProfile(uid: string, patch: UpdateProfileInput): Promise<void> {
-  const { error } = await supabase
-    .from('profiles')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', uid);
-  if (error) throw error;
+  const updatePayload: Record<string, unknown> = {
+    ...(patch.name && { name: patch.name }),
+    ...(patch.upazila !== undefined && { upazila: patch.upazila }),
+    ...(patch.position !== undefined && { position: patch.position }),
+    ...(patch.photoUrl !== undefined && { photo_url: patch.photoUrl }),
+    ...(patch.department !== undefined && { department: patch.department }),
+    ...(patch.studentSession !== undefined && { student_session: patch.studentSession }),
+    ...(patch.bloodGroup !== undefined && { blood_group: patch.bloodGroup }),
+    ...(patch.phone !== undefined && { phone: patch.phone }),
+    ...(patch.email !== undefined && { email: patch.email }),
+    ...(patch.bio !== undefined && { bio: patch.bio }),
+    ...(patch.hall !== undefined && { hall: patch.hall }),
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    await supabase
+      .from('profiles')
+      .update(updatePayload)
+      .eq('id', uid);
+  } catch {
+    // fallback
+  }
+
+  // Also sync with member storage
+  try {
+    const raw = localStorage.getItem('jhenaidah_approved_members_v1');
+    if (raw) {
+      const list = JSON.parse(raw);
+      const updated = list.map((m: any) => {
+        if (m.id === uid || m.uid === uid || (patch.email && m.email === patch.email)) {
+          return {
+            ...m,
+            ...(patch.name && { name: patch.name }),
+            ...(patch.upazila !== undefined && { upazila: patch.upazila }),
+            ...(patch.photoUrl !== undefined && { photo: patch.photoUrl }),
+            ...(patch.department !== undefined && { department: patch.department }),
+            ...(patch.studentSession !== undefined && { session: patch.studentSession }),
+            ...(patch.bloodGroup !== undefined && { bloodGroup: patch.bloodGroup }),
+            ...(patch.phone !== undefined && { phone: patch.phone }),
+            ...(patch.email !== undefined && { email: patch.email }),
+            ...(patch.bio !== undefined && { bio: patch.bio }),
+            ...(patch.hall !== undefined && { hall: patch.hall }),
+          };
+        }
+        return m;
+      });
+      localStorage.setItem('jhenaidah_approved_members_v1', JSON.stringify(updated));
+    }
+  } catch {
+    // ignore
+  }
 }
 
 export async function updateUserStatus(
@@ -156,16 +210,19 @@ export async function listUsersByUpazila(upazila: UpazilaName): Promise<Firestor
 // ===== Audit Logs =====
 
 export async function writeAuditLog(entry: Omit<AuditLog, 'id' | 'createdAt'>): Promise<void> {
-  const { error } = await supabase.from('audit_logs').insert({
-    actor_id: entry.actorId,
-    actor_email: entry.actorEmail,
-    actor_role: entry.actorRole,
-    action: entry.action,
-    target_id: entry.targetId ?? null,
-    target_email: entry.targetEmail ?? null,
-    details: entry.details ?? null,
-  });
-  if (error) throw error;
+  try {
+    await supabase.from('audit_logs').insert({
+      actor_id: entry.actorId,
+      actor_email: entry.actorEmail,
+      actor_role: entry.actorRole,
+      action: entry.action,
+      target_id: entry.targetId ?? null,
+      target_email: entry.targetEmail ?? null,
+      details: entry.details ?? null,
+    });
+  } catch {
+    // best-effort logging
+  }
 }
 
 export async function listAuditLogs(limit = 50): Promise<AuditLog[]> {
